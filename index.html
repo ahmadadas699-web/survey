@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>استبيان تطبيق وسيطك</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { font-family: system-ui, Tahoma, sans-serif; background-color: #f4f7f6; margin: 0; padding: 15px; text-align: center; direction: rtl; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; font-size: 20px; margin-bottom: 10px; }
+        .progress { color: #d35400; font-weight: bold; font-size: 14px; margin-bottom: 20px; background: #fef5e7; padding: 8px; border-radius: 6px; }
+        .question-card { margin-bottom: 25px; text-align: right; }
+        label { font-size: 17px; font-weight: bold; color: #34495e; display: block; margin-bottom: 12px; line-height: 1.4; }
+        input[type="text"], select { width: 100%; padding: 14px; border: 2px solid #bdc3c7; border-radius: 8px; font-size: 16px; box-sizing: border-box; outline: none; background: #fafafa; }
+        input[type="text"]:focus, select:focus { border-color: #2980b9; background: #fff; }
+        .btn-group { display: flex; gap: 10px; }
+        button { padding: 14px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .btn-next { background-color: #27ae60; color: white; flex: 2; }
+        .btn-prev { background-color: #7f8c8d; color: white; flex: 1; }
+        .actions-section { margin: 20px auto; background: white; padding: 15px; border-radius: 12px; max-width: 500px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .btn-export-img { background-color: #e67e22; color: white; width: 100%; font-size: 16px; margin-bottom: 10px; }
+        .btn-clear { background-color: #c0392b; color: white; width: 100%; font-size: 13px; }
+        #renderHiddenArea { position: absolute; right: -9999px; top: -9999px; }
+        .paper-page { width: 1200px; background: white; padding: 20px; box-sizing: border-box; border: 2px solid #000; direction: rtl; font-family: sans-serif; }
+        .paper-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .paper-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
+        .paper-table th, .paper-table td { border: 1px solid #000; padding: 6px 3px; }
+        .paper-table th { background-color: #eaeaea; color: #000; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>استبيان تطبيق وسيطك الميداني</h2>
+    <div class="progress" id="progress">جاري التحميل...</div>
+    <div class="question-card">
+        <label id="questionText"></label>
+        <div id="inputContainer"></div>
+    </div>
+    <div class="btn-group">
+        <button class="btn-prev" id="prevBtn" type="button" style="display:none;">السابق</button>
+        <button class="btn-next" id="nextBtn" type="button">التالي ⬅️</button>
+    </div>
+</div>
+
+<div class="actions-section">
+    <h3 style="margin:5px 0 15px 0;">عدد الفعاليات المحفوظة: (<span id="totalCount">0</span>)</h3>
+    <button class="btn-export-img" id="exportBtn" type="button">📸 استخراج الصور الورقية (20 فعالية/صورة)</button>
+    <button class="btn-clear" id="clearBtn" type="button">🗑️ مسح كل البيانات</button>
+</div>
+
+<div id="renderHiddenArea"></div>
+
+<script>
+const questions = [
+    { title: "ما هي الفعالية؟", type: "text" },
+    { title: "الشخص المسؤول", type: "text" },
+    { title: "الاختصاص", type: "text" },
+    { title: "المنطقة", type: "text" },
+    { title: "العنوان التفصيلي", type: "text" },
+    { title: "الهاتف", type: "text" },
+    { title: "الموبايل", type: "text" },
+    { title: "صفحات السوشيال ميديا", type: "text" },
+    { title: "هل تقوم بالإعلان عن الخدمات عبر السوشيال ميديا؟", type: "select", options: ["نعم", "لا"] },
+    { title: "هل قمت ببيع أو شراء منتج عبر تطبيق إلكتروني سابقاً؟", type: "select", options: ["نعم", "لا"] },
+    { title: "هل سمعت بتطبيق وسيطك سابقاً؟", type: "select", options: ["نعم", "لا"] },
+    { title: "هل ترغب بتجربة تطبيق وسيطك؟", type: "select", options: ["نعم", "لا", "ربما"] },
+    { title: "تقييم الفعالية", type: "select", options: ["ممتاز", "جيد جداً", "جيد", "مقبول", "ضعيف"] },
+    { title: "الاهتمام بالتطبيق", type: "select", options: ["عالي جداً", "عالي", "متوسط", "ضعيف", "غير مهتم"] },
+    { title: "ملاحظات", type: "text" }
+];
+
+let currentQ = 0;
+let currentAnswers = [];
+let allData = [];
+
+try {
+    let saved = localStorage.getItem('surveyData');
+    if (saved) allData = JSON.parse(saved);
+} catch(e) { allData = []; }
+
+function render() {
+    let activeEventNum = allData.length + 1;
+    document.getElementById("progress").innerText = `الفعالية رقم (${activeEventNum}) - السؤال ${currentQ + 1} من ${questions.length}`;
+    document.getElementById("questionText").innerText = `${currentQ + 1}. ${questions[currentQ].title}`;
+    
+    const container = document.getElementById("inputContainer");
+    let val = currentAnswers[currentQ] || '';
+
+    if (questions[currentQ].type === "select") {
+        let optionsHtml = questions[currentQ].options.map(o => `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`).join('');
+        container.innerHTML = `<select id="ansElem">${optionsHtml}</select>`;
+    } else {
+        container.innerHTML = `<input type="text" id="ansElem" value="${val}" placeholder="أدخل الإجابة هنا...">`;
+    }
+
+    document.getElementById("prevBtn").style.display = currentQ > 0 ? "block" : "none";
+    document.getElementById("nextBtn").innerText = currentQ === questions.length - 1 ? "💾 حفظ الفعالية والتالي" : "التالي ⬅️";
+    document.getElementById("totalCount").innerText = allData.length;
+}
+
+function saveCurrentInput() {
+    let elem = document.getElementById("ansElem");
+    if (elem) currentAnswers[currentQ] = elem.value;
+}
+
+document.getElementById("nextBtn").onclick = function() {
+    saveCurrentInput();
+    if (currentQ < questions.length - 1) {
+        currentQ++;
+        render();
+    } else {
+        allData.push([...currentAnswers]);
+        try { localStorage.setItem('surveyData', JSON.stringify(allData)); } catch(e) {}
+        alert(`✅ تم حفظ الفعالية رقم (${allData.length}) بنجاح!`);
+        currentAnswers = [];
+        currentQ = 0;
+        render();
+    }
+};
+
+document.getElementById("prevBtn").onclick = function() {
+    saveCurrentInput();
+    if (currentQ > 0) {
+        currentQ--;
+        render();
+    }
+};
+
+document.getElementById("exportBtn").onclick = async function() {
+    if (allData.length === 0) {
+        alert("لا توجد فعاليات مخزنة لحفظها كصورة!");
+        return;
+    }
+    const hiddenArea = document.getElementById("renderHiddenArea");
+    hiddenArea.innerHTML = "";
+    const chunkSize = 20;
+    const totalPages = Math.ceil(allData.length / chunkSize);
+
+    for (let page = 0; page < totalPages; page++) {
+        let pageData = allData.slice(page * chunkSize, (page + 1) * chunkSize);
+        let pageDiv = document.createElement("div");
+        pageDiv.className = "paper-page";
+        
+        let rowsHtml = pageData.map((row, idx) => {
+            let rowNum = (page * chunkSize) + idx + 1;
+            return `<tr><td><b>${rowNum}</b></td>${row.map(c => `<td>${c || '-'}</td>`).join('')}</tr>`;
+        }).join('');
+
+        pageDiv.innerHTML = `
+            <div class="paper-header">
+                <h2 style="margin:0;">استبيان مسحي ميداني - تطبيق وسيطك</h2>
+                <div><b>الصفحة ${page + 1} من ${totalPages}</b></div>
+            </div>
+            <table class="paper-table">
+                <thead>
+                    <tr>
+                        <th>#</th><th>الفعالية</th><th>المسؤول</th><th>الاختصاص</th><th>المنطقة</th><th>العنوان</th><th>الهاتف</th><th>الموبايل</th><th>السوشيال</th><th>إعلان</th><th>بيع/شراء</th><th>سمعت بـوسيطك</th><th>ترغب بالتجربة</th><th>التقييم</th><th>الاهتمام</th><th>ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        `;
+        hiddenArea.appendChild(pageDiv);
+
+        await html2canvas(pageDiv, { scale: 2 }).then(canvas => {
+            let link = document.createElement("a");
+            link.download = `استبيان_وسيطك_صفحة_${page + 1}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+        });
+    }
+};
+
+document.getElementById("clearBtn").onclick = function() {
+    if (confirm("هل أنت تأكد من مسح جميع الفعاليات؟")) {
+        localStorage.removeItem('surveyData');
+        allData = [];
+        currentAnswers = [];
+        currentQ = 0;
+        render();
+    }
+};
+
+render();
+</script>
+</body>
+</html>
