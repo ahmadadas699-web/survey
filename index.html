@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>استبيان تطبيق وسيطك</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { font-family: system-ui, Tahoma, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; color: #333; }
+        .container { max-width: 500px; margin: auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        h2 { color: #2c3e50; font-size: 20px; text-align: center; margin-bottom: 20px; }
+        .progress { color: #d35400; font-weight: bold; margin-bottom: 15px; font-size: 14px; text-align: center; }
+        .question-card { margin-bottom: 20px; background: #fafbfc; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
+        label { font-size: 16px; font-weight: 600; display: block; margin-bottom: 8px; color: #2c3e50; }
+        input[type="text"], select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        button { padding: 12px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; font-weight: bold; }
+        .btn-next { background-color: #27ae60; color: white; }
+        .btn-prev { background-color: #95a5a6; color: white; }
+        .btn-export { background-color: #2980b9; color: white; width: 100%; margin-top: 10px; }
+        .btn-edit-mode { background-color: #e67e22; color: white; width: 100%; margin-bottom: 15px; }
+        #report-section { display: none; background: #fff; padding: 15px; border-radius: 8px; margin-top: 15px; border: 2px dashed #3498db; }
+        .saved-item { background: #eef2f7; padding: 10px; margin-bottom: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+        .saved-item button { flex: none; padding: 6px 12px; font-size: 13px; background: #e74c3c; color: #fff; }
+        .saved-item .edit-btn { background: #27ae60; margin-left: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app-container">
+    <h2>استبيان وسيطك</h2>
+    
+    <button type="button" class="btn-edit-mode" onclick="openEditList()">✏️ تعديل فعالية محفوظة سابقة</button>
+
+    <div class="progress" id="progress-text">السؤال 1 من 3</div>
+    
+    <form id="survey-form">
+        <div id="question-container" class="question-card">
+            <!-- سيتم حقن الأسئلة هنا ديناميكياً -->
+        </div>
+
+        <div class="btn-group">
+            <button type="button" id="prev-btn" class="btn-prev" onclick="prevStep()" style="display:none;">السابق</button>
+            <button type="button" id="next-btn" class="btn-next" onclick="nextStep()">التالي</button>
+        </div>
+    </form>
+
+    <button type="button" id="export-btn" class="btn-export" onclick="exportReport()" style="display:none;">📷 استخراج التقرير كصورة</button>
+
+    <div id="report-section">
+        <h3 style="text-align:center; color:#2c3e50;">معاينة التقرير</h3>
+        <div id="report-content" style="background:#fff; padding:10px; font-size:14px; line-height:1.6;"></div>
+        <button type="button" class="btn-export" onclick="generateImage()" style="background:#8e44ad; margin-top:15px;">💾 اضغط هنا لإنشاء الصورة نهائياً</button>
+    </div>
+
+    <hr style="margin: 25px 0; border:0; border-top:1px solid #ddd;">
+    
+    <h3>الفعاليات المحفوظة:</h3>
+    <div id="saved-entries"></div>
+</div>
+
+<!-- نافذة التعديل المنبثقة (Modal) -->
+<div id="edit-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+    <div style="background:white; padding:20px; border-radius:10px; width:90%; max-width:400px; max-height:80vh; overflow-y:auto;">
+        <h3>اختر الفعالية للتعديل</h3>
+        <div id="modal-entries-list"></div>
+        <button type="button" onclick="closeEditModal()" style="background:#7f8c8d; color:white; width:100%; margin-top:15px;">إغلاق</button>
+    </div>
+</div>
+
+<script>
+    const questions = [
+        { id: 'q1', label: '1. اسم الفعالية أو النشاط:', type: 'text' },
+        { id: 'q2', label: '2. نوع النشاط:', type: 'select', options: ['مؤتمر', 'ورشة عمل', 'معرض', 'اجتماع'] },
+        { id: 'q3', label: '3. ملاحظات الميدان:', type: 'text' }
+    ];
+
+    let currentStep = 0;
+    let formData = {};
+    let editingIndex = null; // لتتبع ما إذا كنا نقوم بتعديل عنصر موجود
+
+    function renderQuestion() {
+        const container = document.getElementById('question-container');
+        const q = questions[currentStep];
+        document.getElementById('progress-textinnerText', `السؤال ${currentStep + 1} من ${questions.length}`);
+        document.getElementById('progress-text').innerText = `السؤال ${currentStep + 1} من ${questions.length}`;
+
+        let html = `<label>${q.label}</label>`;
+        if (q.type === 'text') {
+            html += `<input type="text" id="input-${q.id}" value="${formData[q.id] || ''}" placeholder="اكتب الإجابة هنا...">`;
+        } else if (q.type === 'select') {
+            html += `<select id="input-${q.id}">`;
+            q.options.forEach(opt => {
+                let selected = (formData[q.id] === opt) ? 'selected' : '';
+                html += `<option value="${opt}" ${selected}>${opt}</option>`;
+            });
+            html += `</select>`;
+        }
+        container.innerHTML = html;
+
+        document.getElementById('prev-btn').style.display = currentStep === 0 ? 'none' : 'block';
+        document.getElementById('next-btn').innerText = currentStep === questions.length - 1 ? (editingIndex !== null ? 'حفظ التعديلات' : 'إنهاء وحفظ') : 'التالي';
+    }
+
+    function saveCurrentStepInput() {
+        const q = questions[currentStep];
+        const input = document.getElementById(`input-${q.id}`);
+        if (input) {
+            formData[q.id] = input.value;
+        }
+    }
+
+    function nextStep() {
+        saveCurrentStepInput();
+        if (currentStep < questions.length - 1) {
+            currentStep++;
+            renderQuestion();
+        } else {
+            // حفظ البيانات في localStorage
+            let entries = JSON.parse(localStorage.getItem('survey_entries') || '[]');
+            if (editingIndex !== null) {
+                entries[editingIndex] = formData;
+                editingIndex = null;
+            } else {
+                entries.push(formData);
+            }
+            localStorage.setItem('survey_entries', JSON.stringify(entries));
+            
+            alert(editingIndex !== null ? 'تم تعديل الفعالية بنجاح!' : 'تم حفظ الفعالية بنجاح!');
+            formData = {};
+            currentStep = 0;
+            renderQuestion();
+            loadSavedEntries();
+            document.getElementById('export-btn').style.display = 'block';
+        }
+    }
+
+    function prevStep() {
+        saveCurrentStepInput();
+        if (currentStep > 0) {
+            currentStep--;
+            renderQuestion();
+        }
+    }
+
+    function loadSavedEntries() {
+        const listDiv = document.getElementById('saved-entries');
+        let entries = JSON.parse(localStorage.getItem('survey_entries') || '[]');
+        if (entries.length === 0) {
+            listDiv.innerHTML = '<p style="color:#777; font-size:14px;">لا توجد فعاليات محفوظة بعد.</p>';
+            return;
+        }
+        let html = '';
+        entries.forEach((entry, idx) => {
+            html += `<div class="saved-item">
+                <span><b>${idx+1}.</b> ${entry.q1 || 'بدون اسم'}</span>
+                <div>
+                    <button class="edit-btn" onclick="editEntry(${idx})">تعديل</button>
+                    <button onclick="deleteEntry(${idx})">حذف</button>
+                </div>
+            </div>`;
+        });
+        listDiv.innerHTML = html;
+    }
+
+    function deleteEntry(index) {
+        let entries = JSON.parse(localStorage.getItem('survey_entries') || '[]');
+        entries.splice(index, 1);
+        localStorage.setItem('survey_entries', JSON.stringify(entries));
+        loadSavedEntries();
+    }
+
+    function editEntry(index) {
+        let entries = JSON.parse(localStorage.getItem('survey_entries') || '[]');
+        formData = { ...entries[index] };
+        editingIndex = index;
+        currentStep = 0;
+        renderQuestion();
+        closeEditModal();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function openEditList() {
+        let entries = JSON.parse(localStorage.getItem('survey_entries') || '[]');
+        const modalList = document.getElementById('modal-entries-list');
+        if (entries.length === 0) {
+            modalList.innerHTML = '<p>لا توجد أي فعاليات محفوظة لتعديلها.</p>';
+        } else {
+            let html = '';
+            entries.forEach((entry, idx) => {
+                html += `<div style="padding:10px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+                    <span>${entry.q1 || 'فعالية بدون اسم'}</span>
+                    <button type="button" class="edit-btn" onclick="editEntry(${idx})" style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:4px;">تعديل</button>
+                </div>`;
+            });
+            modalList.innerHTML = html;
+        }
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    function exportReport() {
+        let entries = JSON.parse(localStorage.getItem('survey_entries') || '[]');
+        if(entries.length === 0) {
+            alert('الرجاء إدخال وحفظ فعالية واحدة على الأقل قبل الاستخراج.');
+            return;
+        }
+        let contentHtml = '<h4>ملخص كافة الفعاليات:</h4>';
+        entries.forEach((en, i) => {
+            contentHtml += `<div style="border-bottom:1px solid #eee; margin-bottom:10px; padding-bottom:5px;">
+                <p><b>الفعالية ${i+1}:</b> ${en.q1 || '-'}</p>
+                <p><b>النوع:</b> ${en.q2 || '-'}</p>
+                <p><b>الملاحظات:</b> ${en.q3 || '-'}</p>
+            </div>`;
+        });
+        document.getElementById('report-content').innerHTML = contentHtml;
+        document.getElementById('report-section').style.display = 'block';
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+
+    function generateImage() {
+        const reportElement = document.getElementById('report-section');
+        html2canvas(reportElement).then(canvas => {
+            const dataUrl = canvas.toDataURL("image/png");
+            
+            // فتح نافذة جديدة أو عارضة تتجاوز قيود الـ WebView في أندرويد
+            let previewWindow = window.open("", "_blank");
+            if (previewWindow) {
+                previewWindow.document.write(`
+                    <html dir="rtl">
+                    <head><title>معاينة الصورة المستخرجة</title></head>
+                    <body style="text-align:center; background:#333; padding:20px; color:white; font-family:sans-serif;">
+                        <h3>اضغط مطولاً على الصورة أدناه ثم اختر (حفظ الصورة / Download image):</h3>
+                        <img src="${dataUrl}" style="max-width:100%; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.5); margin-top:15px;" />
+                    </body>
+                    </html>
+                `);
+            } else {
+                // بديل احتياطي إذا كان المتصفح يحظر النوافذ المنبثقة
+                const link = document.createElement('a');
+                link.download = 'survey-report.png';
+                link.href = dataUrl;
+                link.click();
+            }
+        });
+    }
+
+    renderQuestion();
+    loadSavedEntries();
+</script>
+
+</body>
+</html>
